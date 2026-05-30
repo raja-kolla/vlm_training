@@ -78,7 +78,7 @@ pip install flash-attn --no-build-isolation   # optional; phase scripts use SDPA
 ```bash
 export IMAGE_FOLDER=/root/bionicsuite1/home/ai-user/chest_classifier/disk/chest_images
 
-# Full dataset (~318k rows after filtering)
+# Full dataset
 bash scripts/prepare_data.sh
 
 # Quick dry run (first 1000 rows)
