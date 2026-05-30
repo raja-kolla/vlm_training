@@ -52,7 +52,7 @@ def prepare_llava_dataset(
     csv_path: str | Path,
     output_dir: str | Path,
     image_folder: str | Path,
-    val_ratio: float = 0.02,
+    val_ratio: float = 0.20,
     seed: int = 42,
     max_samples: int | None = None,
     require_image: bool = True,
@@ -140,7 +140,7 @@ def main() -> None:
         default="training_data/llava",
         help="Output directory for train.json and val.json.",
     )
-    parser.add_argument("--val-ratio", type=float, default=0.02)
+    parser.add_argument("--val-ratio", type=float, default=0.20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--max-samples",

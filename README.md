@@ -87,8 +87,8 @@ MAX_SAMPLES=1000 bash scripts/prepare_data.sh
 
 Outputs:
 
-- `training_data/llava/train.json` — training split (98%)
-- `training_data/llava/val.json` — validation split (2%)
+- `training_data/llava/train.json` — training split (80%)
+- `training_data/llava/val.json` — validation split (20%)
 - `training_data/llava/meta.json` — stats
 
 Or run directly:

@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 CSV_PATH="${CSV_PATH:-training_data/csv/filtered_columns_cxr_0.3M.csv}"
 IMAGE_FOLDER="${IMAGE_FOLDER:-/root/bionicsuite1/home/ai-user/chest_classifier/disk/chest_images}"
 OUTPUT_DIR="${OUTPUT_DIR:-training_data/llava}"
-VAL_RATIO="${VAL_RATIO:-0.02}"
+VAL_RATIO="${VAL_RATIO:-0.20}"
 SEED="${SEED:-42}"
 MAX_SAMPLES="${MAX_SAMPLES:-}"
 
