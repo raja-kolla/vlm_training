@@ -1,0 +1,12 @@
+.venv/
+.git/
+__pycache__/
+*.py[cod]
+outputs/
+training_data/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+*.csv
+*.json
+!configs/**/*.json

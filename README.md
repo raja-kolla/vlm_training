@@ -180,9 +180,144 @@ Parsed output includes `observations`, `conclusion`, and `raw`.
 ## Tips
 
 1. **VRAM:** Phase 1 with 2048 max side is memory-heavy. Start with `BATCH_PER_DEVICE=1`, `GRAD_ACCUM_STEPS=8`, and gradient checkpointing (enabled by default).
-2. **Monitor:** TensorBoard logs go to `./tf-logs` (or set `--report_to wandb`).
+2. **Monitor:** Training logs go to **W&B** (Modal) or TensorBoard locally. On Modal, open your `cxr-vlm-qwen35` project on wandb.ai.
 3. **Resume:** Training auto-resumes if checkpoints exist in `OUTPUT_DIR`.
 4. **Eval:** Pass `--eval_path training_data/llava/val.json --eval_strategy steps --eval_steps 500` to any training script for validation loss.
+
+## Training on Modal (no conda needed)
+
+Modal runs training in a **GPU container** with **pip/uv** — you do not need conda on Modal.
+
+### Volume layout (`vlm_training`)
+
+Everything is written under `/vol` on your volume:
+
+```
+/vol/
+├── images/                              # chest X-ray JPEGs (input)
+├── csv/
+│   └── filtered_columns_cxr_0.3M.csv    # source CSV (input)
+├── llava/                               # prepare_data output
+│   ├── train.json                       # 80%
+│   ├── val.json                         # 20%
+│   └── meta.json
+├── hf_cache/                            # HuggingFace + datasets cache
+├── wandb/                               # W&B local run files
+├── logs/
+│   ├── phase1_freeze_llm/               # trainer logs
+│   └── phase2_full_sft/
+└── outputs/
+    ├── phase1_freeze_llm/               # checkpoints
+    └── phase2_full_sft/
+```
+
+Verify contents:
+
+```bash
+modal volume ls vlm_training
+modal volume ls vlm_training images
+modal volume ls vlm_training csv
+```
+
+### One-time setup (local machine)
+
+```bash
+pip install modal
+modal setup
+
+# W&B — store API key + personal entity (not org) to avoid permission errors
+modal secret create wandb WANDB_API_KEY=<your-key> WANDB_ENTITY=rajaphanindra
+
+# Optional overrides
+export WANDB_PROJECT=cxr-vlm-qwen35
+```
+
+### Workflow
+
+```bash
+# 1) Build LLaVA JSON from CSV + images on the volume
+modal run modal/app.py --action prepare_data
+
+# 2) Optional: cache Qwen3.5-4B weights on the volume
+modal run modal/app.py --action download_model
+
+# 3) Phase 1 — logs go to W&B + /vol/logs + checkpoints to /vol/outputs
+modal run modal/app.py --action train_phase1
+
+# 4) Phase 2
+modal run modal/app.py --action train_phase2
+```
+
+Training metrics (loss, eval loss, lr, etc.) are logged to **Weights & Biases** via `--report_to wandb`. Check your project at [wandb.ai](https://wandb.ai) under project `cxr-vlm-qwen35` (override with `WANDB_PROJECT`).
+
+If you already generated `train.json` / `val.json` locally, upload them:
+
+```bash
+modal volume put vlm_training training_data/llava/train.json /llava/train.json
+modal volume put vlm_training training_data/llava/val.json /llava/val.json
+```
+
+### Why this approach
+
+| Approach | Verdict |
+|----------|---------|
+| **Modal Image + pip** | Best — reproducible, no conda |
+| **Conda on Modal** | Unnecessary — Modal containers are ephemeral; use `Image.pip_install` |
+| **Multi-GPU DeepSpeed** | Only if you request `gpu="A100:2"` etc.; start with 1× A100-80GB |
+| **Volume for data/ckpt** | Required — container filesystem is ephemeral |
+| **flash-attn** | Skipped — Qwen3.5 uses `--disable_flash_attn2 True` (SDPA) |
+
+### GPU sizing & batch size
+
+Default GPU is **H200** (141 GB). Batch sizes are set per GPU in `modal/app.py` → `GPU_PROFILES`:
+
+| Phase | H200 default | Effective batch |
+|-------|--------------|-----------------|
+| Phase 1 (LLM frozen) | `batch=4`, `grad_accum=4` | 16 |
+| Phase 2 (full SFT) | `batch=2`, `grad_accum=8` | 16 |
+
+Phase 2 on H200 uses **ZeRO-2** (no CPU offload) for faster training vs A100.
+
+**Run with defaults (H200):**
+
+```bash
+modal run modal/app.py --action train_phase1
+modal run modal/app.py --action train_phase2
+```
+
+**Override batch size** (if OOM or to push higher):
+
+```bash
+# OOM → lower batch, raise grad_accum to keep effective batch ≈ 16
+modal run modal/app.py --action train_phase1 --batch-size 2 --grad-accum 8
+
+# H200 headroom → try larger micro-batch
+modal run modal/app.py --action train_phase1 --batch-size 6 --grad-accum 2
+```
+
+**Use a different GPU:**
+
+```bash
+CXR_PHASE1_GPU=A100-80GB modal run modal/app.py --action train_phase1
+```
+
+**Tuning guide:** Keep `batch_size × grad_accum ≈ 16`. If you hit OOM, halve `batch_size` and double `grad_accum`. Watch W&B for stable loss before increasing batch further.
+
+### W&B on Modal
+
+Create the secret once (name must be `wandb`, or set `CXR_WANDB_SECRET`):
+
+```bash
+modal secret create wandb WANDB_API_KEY=your_key_here WANDB_ENTITY=rajaphanindra
+```
+
+Use your **personal W&B username** as `WANDB_ENTITY`, not the org (`ai_5c`), if you see `user does not have models write access for this org`. Metrics-only logging is enabled (`WANDB_LOG_MODEL=false`); checkpoints still save to `/vol/outputs/`.
+
+Runs are grouped as `phase1` / `phase2`. Custom run name:
+
+```bash
+modal run modal/app.py --action train_phase1 --run-name cxr-p1-run1
+```
 
 ## License
 

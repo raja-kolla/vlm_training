@@ -1,10 +1,8 @@
-# Core training stack (adapted from https://github.com/2U1/Qwen-VL-Series-Finetune)
+# Modal image dependencies (torch installed separately in app.py)
 accelerate>=1.10.0
 deepspeed>=0.17.0
 peft>=0.15.0
 transformers>=5.3.0
-torch>=2.8.0
-torchvision>=0.23.0
 liger-kernel>=0.8.0
 qwen-vl-utils
 bitsandbytes>=0.49.0
@@ -14,9 +12,5 @@ pillow>=11.0.0
 wandb>=0.19.0
 tensorboardX>=2.6.0
 trl>=0.25.0
-
-# Optional but recommended
-flash-attn; platform_system != "Windows"
-
-# Data prep / inference helpers
 pyyaml>=6.0
+huggingface_hub>=0.34.0

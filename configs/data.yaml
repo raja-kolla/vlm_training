@@ -1,7 +1,22 @@
-# Paths — override via env vars in shell scripts
+# Paths — local defaults; on Modal volume `vlm_training` use /vol/images and /vol/csv
 csv_path: training_data/csv/filtered_columns_cxr_0.3M.csv
 image_folder: /root/bionicsuite1/home/ai-user/chest_classifier/disk/chest_images
 llava_output_dir: training_data/llava
+
+modal_volume:
+  name: vlm_training
+  mount: /vol
+  images: /vol/images
+  csv: /vol/csv/filtered_columns_cxr_0.3M.csv
+  llava: /vol/llava
+  outputs: /vol/outputs
+  hf_cache: /vol/hf_cache
+  wandb: /vol/wandb
+  logs: /vol/logs
+
+wandb:
+  project: cxr-vlm-qwen35
+  secret_name: wandb  # Modal secret with WANDB_API_KEY
 
 model:
   name: Qwen/Qwen3.5-4B
