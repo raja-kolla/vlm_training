@@ -19,8 +19,10 @@ vlm_training/
 │       └── prepare_llava.py    # CSV → LLaVA JSON converter
 ├── src/                      # Qwen-VL SFT trainer (vision + LLM)
 ├── scripts/
+│   ├── setup_node.sh         # one-time env setup on a dedicated GPU node
+│   ├── train_local.py        # main launcher: prepare_data / train_phase1 / train_phase2
 │   ├── prepare_data.sh
-│   ├── train_phase1.sh       # freeze LLM
+│   ├── train_phase1.sh       # freeze LLM (bare script, no restart loop)
 │   ├── train_phase2.sh       # full SFT from phase-1 ckpt
 │   └── train_phase2_lora.sh  # optional LoRA variant
 ├── configs/
@@ -72,6 +74,87 @@ pip install flash-attn --no-build-isolation   # optional; phase scripts use SDPA
 ```
 
 > **Note:** Qwen3.5 training scripts set `--disable_flash_attn2 True` because Flash Attention 2 can raise CUDA errors on Qwen3.5; SDPA is the stable path.
+
+## Training on a dedicated GPU node (4× H100) — recommended
+
+If you have your own machine with GPUs (no Modal/serverless), use `scripts/train_local.py`. It is the local equivalent of the old Modal app: same training recipe and hyperparameters, auto-resume from checkpoints, and automatic restart on crash — but with no 24h timeout and no volume syncing.
+
+### One-time setup on the node
+
+```bash
+git clone <repo-url> vlm_training && cd vlm_training
+bash scripts/setup_node.sh        # creates .venv, installs torch cu128 + requirements
+source .venv/bin/activate
+wandb login                       # optional, for W&B metrics
+```
+
+### Put the data in place
+
+```bash
+# Images can live anywhere — just point IMAGE_FOLDER at them
+export IMAGE_FOLDER=/data/chest_images
+
+# CSV goes here (or pass --csv-path)
+mkdir -p training_data/csv
+cp /path/to/filtered_columns_cxr_0.3M.csv training_data/csv/
+```
+
+If checkpoints/data should live on a different (bigger) disk, set `CXR_DATA_ROOT=/big/disk/cxr` — outputs, logs, HF cache, and LLaVA JSON all move under it.
+
+### Run
+
+```bash
+python scripts/train_local.py prepare_data      # CSV -> training_data/llava/{train,val}.json
+python scripts/train_local.py download_model    # optional: pre-cache Qwen3.5-4B
+
+# Phase 1 — run inside tmux/screen so it survives SSH disconnects
+tmux new -s phase1
+python scripts/train_local.py train_phase1
+
+# Phase 2 — starts from outputs/phase1_freeze_llm
+python scripts/train_local.py train_phase2
+```
+
+### Defaults for 4× H100 80GB
+
+| Phase | Per-GPU batch | Grad accum | Global batch | DeepSpeed |
+|-------|---------------|------------|--------------|-----------|
+| Phase 1 (freeze LLM) | 4 | 8 | **128** | ZeRO-2 |
+| Phase 2 (full SFT) | 2 | 4 | **32** | ZeRO-3 |
+
+If you hit OOM, halve `--batch-size` and double `--grad-accum` (keeps the global batch constant):
+
+```bash
+python scripts/train_local.py train_phase1 --batch-size 2 --grad-accum 16
+```
+
+As a last resort for phase 2, switch to CPU offload by editing `PHASE_PROFILES` in `scripts/train_local.py` to use `configs/deepspeed/zero3_offload.json`.
+
+### Checkpoints, resume & crash recovery
+
+- **Auto-resume:** if `checkpoint-*` exists in the output dir, training continues from the latest one. Just re-run the same command after any interruption.
+- **Auto-restart:** if the training process crashes, the launcher restarts it (up to 100 times, exponential backoff) and resumes from the latest checkpoint.
+- **Fresh start:** `--fresh-start` archives the old output dir to `*.archived.<timestamp>/` (never deletes).
+- **Skip resume without touching files:** `CXR_FORCE_FRESH=1 python scripts/train_local.py train_phase1`.
+- Checkpoints save every 100 steps, keeping the last 3 (`save_total_limit=3`).
+
+### Useful overrides
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `CXR_NUM_GPUS` | `4` | GPUs to use (`--num-gpus` also works) |
+| `IMAGE_FOLDER` | `training_data/images` | JPEG root |
+| `CXR_DATA_ROOT` | repo dir | Root for data/outputs/logs/caches |
+| `CXR_OUTPUT_ROOT` | `$CXR_DATA_ROOT/outputs` | Checkpoint root |
+| `CXR_MODEL_ID` | `Qwen/Qwen3.5-4B` | Base model |
+| `CXR_REPORT_TO` | `wandb` | Set `tensorboard` or `none` to skip W&B |
+| `WANDB_PROJECT` / `WANDB_ENTITY` | `cxr-vlm-qwen35` / — | W&B routing |
+
+Dry-run to inspect the exact training command without launching:
+
+```bash
+python scripts/train_local.py train_phase1 --dry-run
+```
 
 ## Step 1 — Prepare LLaVA dataset
 
@@ -237,7 +320,9 @@ python -m cxr_vlm.eval.run_eval \
 3. **Resume:** Training auto-resumes if checkpoints exist in `OUTPUT_DIR`.
 4. **Eval:** Pass `--eval_path training_data/llava/val.json --eval_strategy steps --eval_steps 500` to any training script for validation loss.
 
-## Training on Modal (no conda needed)
+## Training on Modal (legacy — superseded by the dedicated-node workflow above)
+
+> Kept for reference. New training runs should use `scripts/train_local.py` on the dedicated GPU node.
 
 Modal runs training in a **GPU container** with **pip/uv** — you do not need conda on Modal.
 

@@ -1,0 +1,6 @@
+# Optional dependencies for cxr_vlm.eval (install on eval machine / GPU node)
+radgraph>=0.1.18
+sacrebleu>=2.4.0
+rouge-score>=0.1.2
+nltk>=3.8
+bert-score>=0.3.13

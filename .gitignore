@@ -4,6 +4,12 @@ __pycache__/
 *$py.class
 training_data/
 outputs/
+checkpoints/
+logs/
+wandb/
+.hf_cache/
+eval_results/
+*.log
 
 # C extensions
 *.so
@@ -128,7 +134,7 @@ ipython_config.py
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
-
+cxr_vlm/eval/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid

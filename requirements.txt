@@ -15,8 +15,8 @@ wandb>=0.19.0
 tensorboardX>=2.6.0
 trl>=0.25.0
 
-# Optional but recommended
-flash-attn; platform_system != "Windows"
+# Optional — training uses SDPA (--disable_flash_attn2 True); install manually if wanted:
+#   pip install flash-attn --no-build-isolation
 
 # Data prep / inference helpers
 pyyaml>=6.0
