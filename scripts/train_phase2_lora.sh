@@ -63,7 +63,7 @@ fi
   --report_to tensorboard \
   --lazy_preprocess True \
   --save_strategy steps \
-  --save_steps 500 \
+  --save_steps 100 \
   --save_total_limit 3 \
   --dataloader_num_workers 4 \
   --max_seq_length 8192 \

@@ -58,12 +58,12 @@ fi
   --lr_scheduler_type cosine \
   --logging_steps 10 \
   --tf32 True \
-  --gradient_checkpointing True \
-  --report_to tensorboard \
+  --gradient_checkpointing False \
+  --report_to wandb \
   --lazy_preprocess True \
   --save_strategy steps \
-  --save_steps 500 \
-  --save_total_limit 3 \
-  --dataloader_num_workers 4 \
+  --save_steps 100 \
+  --save_total_limit 10 \
+  --dataloader_num_workers 64 \
   --max_seq_length 8192 \
   "$@"

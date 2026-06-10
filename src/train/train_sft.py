@@ -11,7 +11,15 @@ from model.load_model import get_qwen_vl_generation_backbone, load_qwen_vl_gener
 from trainer import QwenSFTTrainer
 from dataset import make_supervised_data_module
 from params import DataArguments, ModelArguments, TrainingArguments
-from train.train_utils import get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer
+from train.train_utils import (
+    get_peft_state_maybe_zero_3,
+    get_peft_state_non_lora_maybe_zero_3,
+    load_hf_checkpoint_weights,
+    resolve_training_resume,
+    safe_save_model_for_hf_trainer,
+    CheckpointPersistCallback,
+    StepDetailsCallback,
+)
 import pathlib
 
 local_rank = None
@@ -217,11 +225,26 @@ def train():
         model=model,
         processing_class=processor,
         args=training_args,
+        callbacks=[StepDetailsCallback(), CheckpointPersistCallback()],
         **data_module
     )
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+    using_deepspeed = bool(training_args.deepspeed)
+    force_fresh = os.environ.get("CXR_FORCE_FRESH", "").lower() in ("1", "true", "yes")
+    if force_fresh:
+        rank0_print("CXR_FORCE_FRESH set — skipping checkpoint resume (existing checkpoints kept on disk).")
+        resume_path, hf_weights_dir = None, None
+    else:
+        resume_path, hf_weights_dir = resolve_training_resume(
+            training_args.output_dir,
+            using_deepspeed=using_deepspeed,
+            log_fn=rank0_print,
+        )
+    if hf_weights_dir is not None:
+        load_hf_checkpoint_weights(model, hf_weights_dir, log_fn=rank0_print)
+
+    if resume_path:
+        trainer.train(resume_from_checkpoint=resume_path)
     else:
         trainer.train()
 

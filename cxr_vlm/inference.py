@@ -29,21 +29,29 @@ def parse_report(text: str) -> dict[str, str]:
     }
 
 
-def generate_report(
+def load_model_and_processor(
     model_path: str,
+    *,
+    attn_implementation: str = "sdpa",
+):
+    model = load_qwen_vl_generation_model(
+        model_path,
+        dtype=torch.bfloat16,
+        attn_implementation=attn_implementation,
+        device_map="auto",
+    )
+    processor = AutoProcessor.from_pretrained(model_path)
+    return model, processor
+
+
+def generate_report_from_loaded(
+    model,
+    processor,
     image_path: str,
     history: str | None = None,
     max_new_tokens: int = 1024,
     max_pixels: int = 128 * 16 * 128 * 16,
 ) -> dict[str, str]:
-    model = load_qwen_vl_generation_model(
-        model_path,
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        device_map="auto",
-    )
-    processor = AutoProcessor.from_pretrained(model_path)
-
     image = Image.open(image_path).convert("RGB")
     user_text = build_user_prompt(history)
     messages = [
@@ -78,6 +86,24 @@ def generate_report(
         clean_up_tokenization_spaces=False,
     )[0]
     return parse_report(generated)
+
+
+def generate_report(
+    model_path: str,
+    image_path: str,
+    history: str | None = None,
+    max_new_tokens: int = 1024,
+    max_pixels: int = 128 * 16 * 128 * 16,
+) -> dict[str, str]:
+    model, processor = load_model_and_processor(model_path)
+    return generate_report_from_loaded(
+        model,
+        processor,
+        image_path,
+        history=history,
+        max_new_tokens=max_new_tokens,
+        max_pixels=max_pixels,
+    )
 
 
 def main() -> None:

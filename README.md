@@ -25,7 +25,7 @@ vlm_training/
 │   └── train_phase2_lora.sh  # optional LoRA variant
 ├── configs/
 │   ├── data.yaml
-│   └── deepspeed/
+│   └── deepspeed/            # zero1.json, zero2.json, zero2_offload.json, zero3.json, zero3_offload.json
 └── training_data/            # your CSV + generated LLaVA JSON
 ```
 
@@ -164,6 +164,59 @@ python -m cxr_vlm.inference \
 
 Parsed output includes `observations`, `conclusion`, and `raw`.
 
+## Evaluate checkpoints (RadGraph F1 + NLG metrics)
+
+Install eval dependencies once:
+
+```bash
+pip install -r requirements-eval.txt
+```
+
+Evaluate all checkpoints under `checkpoints/phase1_freeze_llm/` on `training_data/llava/val.json`:
+
+```bash
+bash scripts/eval_checkpoints.sh
+```
+
+Quick smoke test (first 50 samples):
+
+```bash
+MAX_SAMPLES=50 bash scripts/eval_checkpoints.sh
+```
+
+Outputs per checkpoint under `eval_results/phase1_freeze_llm/`:
+
+| File | Contents |
+|------|----------|
+| `checkpoint-100/metrics.json` | Aggregate scores |
+| `checkpoint-100/predictions.jsonl` | Per-sample reference vs prediction |
+| `summary.csv` | Compare all checkpoints side-by-side |
+
+**Metrics computed:**
+
+| Metric | What it measures |
+|--------|------------------|
+| **RadGraph F1** | Clinical entity/relation correctness (primary) |
+| **RadGraph entity / relation F1** | Sub-scores from RadGraph |
+| **BLEU-1/2/4** | N-gram overlap with reference |
+| **ROUGE-L** | Longest common subsequence (full report) |
+| **ROUGE-L (observations / conclusion)** | Section-level overlap |
+| **METEOR** | Synonym-aware overlap |
+| **BERTScore F1** | Optional (`--bertscore`); semantic similarity |
+| **tag_format_rate** | Fraction of outputs with valid `<observations>` / `<conclusion>` tags |
+
+**Other metrics used in CXR literature** (not wired yet): CheXbert label F1, RadCliQ composite, GREEN, temporal/critical finding accuracy. RadGraph F1 is the standard for factual clinical correctness.
+
+Single checkpoint:
+
+```bash
+python -m cxr_vlm.eval.run_eval \
+  --checkpoint checkpoints/phase1_freeze_llm/checkpoint-500 \
+  --val-json training_data/llava/val.json \
+  --image-folder "$IMAGE_FOLDER" \
+  --output-dir eval_results/checkpoint-500
+```
+
 ## Environment variables reference
 
 | Variable | Default | Description |
@@ -269,39 +322,77 @@ modal volume put vlm_training training_data/llava/val.json /llava/val.json
 
 ### GPU sizing & batch size
 
-Default GPU is **H200** (141 GB). Batch sizes are set per GPU in `modal/app.py` → `GPU_PROFILES`:
+Default: **8× H200** (`gpu="H200:8"`) with DeepSpeed ZeRO-2.
 
-| Phase | H200 default | Effective batch |
-|-------|--------------|-----------------|
-| Phase 1 (LLM frozen) | `batch=4`, `grad_accum=4` | 16 |
-| Phase 2 (full SFT) | `batch=2`, `grad_accum=8` | 16 |
+| Phase | Per-GPU batch | Grad accum | GPUs | Global batch |
+|-------|---------------|------------|------|--------------|
+| Phase 1 | 16 | 1 | 8 | **128** |
+| Phase 2 | 4 | 1 | 8 | **32** |
 
-Phase 2 on H200 uses **ZeRO-2** (no CPU offload) for faster training vs A100.
-
-**Run with defaults (H200):**
+**Run (default 8× H200):**
 
 ```bash
 modal run modal/app.py --action train_phase1
 modal run modal/app.py --action train_phase2
 ```
 
-**Override batch size** (if OOM or to push higher):
+**Single GPU** (override):
 
 ```bash
-# OOM → lower batch, raise grad_accum to keep effective batch ≈ 16
-modal run modal/app.py --action train_phase1 --batch-size 2 --grad-accum 8
-
-# H200 headroom → try larger micro-batch
-modal run modal/app.py --action train_phase1 --batch-size 6 --grad-accum 2
+CXR_NUM_GPUS=1 CXR_PHASE1_GPU=H200 modal run modal/app.py --action train_phase1
 ```
 
-**Use a different GPU:**
+**Override batch size:**
 
 ```bash
-CXR_PHASE1_GPU=A100-80GB modal run modal/app.py --action train_phase1
+modal run modal/app.py --action train_phase1 --batch-size 2 --grad-accum 2
 ```
 
 **Tuning guide:** Keep `batch_size × grad_accum ≈ 16`. If you hit OOM, halve `batch_size` and double `grad_accum`. Watch W&B for stable loss before increasing batch further.
+
+### Checkpoints & resume (Modal)
+
+| Behavior | Detail |
+|----------|--------|
+| **Auto-resume** | Default: if `checkpoint-*` exists under `/vol/outputs/phase1_freeze_llm/`, training continues from the latest checkpoint. |
+| **Auto-restart on crash** | Training subprocess is restarted up to **100 times** (60s backoff, max 5 min); each restart resumes from the latest checkpoint. Modal also retries the whole job up to **10×** on container failure/24h timeout. |
+| **Volume sync** | Checkpoints are `volume.commit()`'d every **5 minutes** and on success/failure so they survive crashes and Modal retries. |
+| **Save frequency** | Every **100 steps** (`save_steps=100`); keeps last **3** checkpoints (`save_total_limit=3`). |
+| **Fresh start** | `--fresh-start` **archives** the old output dir (does not delete it) to `phase1_freeze_llm.archived.<timestamp>/`. |
+| **Force no resume** | `CXR_FORCE_FRESH=1` on the training job skips resume but leaves existing files on disk. |
+
+**Do not** use `--fresh-start` to recover from a failed run — just re-run without it:
+
+```bash
+modal run --detach modal/app.py --action train_phase1
+```
+
+DeepSpeed checkpoints (8× GPU + ZeRO) resume fully. Older single-GPU HF checkpoints load **weights only** (optimizer/step reset) but are **never renamed or deleted**.
+
+### Training timeout (Modal limit)
+
+Modal allows **at most 24 hours per invocation** — you cannot set a one-month timeout on a single run.
+
+In `modal/app.py`:
+
+```python
+TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60   # Modal maximum (86400s)
+TRAIN_RETRIES = modal.Retries(initial_delay=0.0, max_retries=10)  # auto-restart on timeout
+```
+
+This gives up to **~11 days** (11 × 24h) per `modal run` command. Training **auto-resumes from checkpoints** in `/vol/outputs/` after each timeout/retry.
+
+For a full month of wall time, re-run the same command when the job finishes or exhausts retries:
+
+```bash
+modal run modal/app.py --action train_phase1   # run again; resumes from latest checkpoint
+```
+
+Check progress:
+
+```bash
+modal volume ls vlm_training outputs/phase1_freeze_llm
+```
 
 ### W&B on Modal
 

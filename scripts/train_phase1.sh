@@ -25,6 +25,8 @@ IMAGE_MAX_PIXELS="${IMAGE_MAX_PIXELS:-$((128 * 16 * 128 * 16))}"
 
 export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
+# ZeRO-1: optimizer state only (lower comm than ZeRO-2, more VRAM than ZeRO-2/3)
+# DEEPSPEED_CONFIG=configs/deepspeed/zero1.json
 DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/deepspeed/zero2.json}"
 if [[ "$NUM_DEVICES" -eq 1 ]]; then
   LAUNCHER=(python)
@@ -59,12 +61,12 @@ fi
   --lr_scheduler_type cosine \
   --logging_steps 10 \
   --tf32 True \
-  --gradient_checkpointing True \
-  --report_to tensorboard \
+  --gradient_checkpointing False \
+  --report_to wandb \
   --lazy_preprocess True \
   --save_strategy steps \
-  --save_steps 500 \
-  --save_total_limit 3 \
-  --dataloader_num_workers 4 \
+  --save_steps 100 \
+  --save_total_limit 10 \
+  --dataloader_num_workers 64 \
   --max_seq_length 8192 \
   "$@"
