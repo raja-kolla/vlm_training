@@ -5,41 +5,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3.5-4B}"
-DATA_PATH="${DATA_PATH:-training_data/llava/train.json}"
-IMAGE_FOLDER="${IMAGE_FOLDER:-/root/bionicsuite1/home/ai-user/chest_classifier/disk/chest_images}"
-OUTPUT_DIR="${OUTPUT_DIR:-outputs/phase1_freeze_llm}"
-
-NUM_DEVICES="${NUM_DEVICES:-1}"
-BATCH_PER_DEVICE="${BATCH_PER_DEVICE:-1}"
-GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
-NUM_EPOCHS="${NUM_EPOCHS:-1}"
-LEARNING_RATE="${LEARNING_RATE:-1e-5}"
-VISION_LR="${VISION_LR:-2e-6}"
-MERGER_LR="${MERGER_LR:-1e-5}"
-
-# Qwen3.5 uses patch size 16. Max side 2048 -> 128 spatial tokens.
-# image_max_pixels = 128 * 16 * 128 * 16 = 2048 * 2048
-IMAGE_MIN_PIXELS="${IMAGE_MIN_PIXELS:-$((256 * 16 * 16))}"
-IMAGE_MAX_PIXELS="${IMAGE_MAX_PIXELS:-$((128 * 16 * 128 * 16))}"
-
 export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
-# ZeRO-1: optimizer state only (lower comm than ZeRO-2, more VRAM than ZeRO-2/3)
-# DEEPSPEED_CONFIG=configs/deepspeed/zero1.json
-DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/deepspeed/zero2.json}"
-if [[ "$NUM_DEVICES" -eq 1 ]]; then
-  LAUNCHER=(python)
-else
-  LAUNCHER=(deepspeed --num_gpus "$NUM_DEVICES")
-fi
+# Reuse the already-downloaded HF model cache instead of re-downloading.
+export HF_HOME="${HF_HOME:-/data/raja/vlm_training/.hf_cache}"
 
-"${LAUNCHER[@]}" src/train/train_sft.py \
+deepspeed --num_gpus 4 src/train/train_sft.py \
   --use_liger_kernel True \
-  --deepspeed "$DEEPSPEED_CONFIG" \
-  --model_id "$MODEL_NAME" \
-  --data_path "$DATA_PATH" \
-  --image_folder "$IMAGE_FOLDER" \
+  --deepspeed configs/deepspeed/zero2.json \
+  --model_id Qwen/Qwen3.5-4B \
+  --data_path /data/raja/vlm_training/training_data/llava/train.json \
+  --image_folder /data/raja/chest_images \
   --remove_unused_columns False \
   --freeze_llm True \
   --freeze_vision_tower False \
@@ -47,26 +23,26 @@ fi
   --bf16 True \
   --fp16 False \
   --disable_flash_attn2 True \
-  --output_dir "$OUTPUT_DIR" \
-  --num_train_epochs "$NUM_EPOCHS" \
-  --per_device_train_batch_size "$BATCH_PER_DEVICE" \
-  --gradient_accumulation_steps "$GRAD_ACCUM_STEPS" \
-  --image_min_pixels "$IMAGE_MIN_PIXELS" \
-  --image_max_pixels "$IMAGE_MAX_PIXELS" \
-  --learning_rate "$LEARNING_RATE" \
-  --merger_lr "$MERGER_LR" \
-  --vision_lr "$VISION_LR" \
+  --output_dir /data/raja/vlm_training/outputs/phase1_freeze_llm_bkp \
+  --num_train_epochs 2 \
+  --per_device_train_batch_size 12 \
+  --gradient_accumulation_steps 4 \
+  --image_min_pixels 65536 \
+  --image_max_pixels 4194304 \
+  --learning_rate 1e-5 \
+  --merger_lr 1e-5 \
+  --vision_lr 2e-6 \
   --weight_decay 0.01 \
   --warmup_ratio 0.03 \
   --lr_scheduler_type cosine \
-  --logging_steps 10 \
+  --logging_steps 1 \
   --tf32 True \
-  --gradient_checkpointing False \
+  --gradient_checkpointing True \
   --report_to wandb \
   --lazy_preprocess True \
   --save_strategy steps \
   --save_steps 100 \
-  --save_total_limit 10 \
-  --dataloader_num_workers 64 \
+  --save_total_limit 100 \
+  --dataloader_num_workers 8 \
   --max_seq_length 8192 \
   "$@"

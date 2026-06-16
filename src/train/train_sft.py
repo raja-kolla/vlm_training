@@ -7,6 +7,9 @@ from transformers import (
     BitsAndBytesConfig, 
     HfArgumentParser, 
 )
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 from model.load_model import get_qwen_vl_generation_backbone, load_qwen_vl_generation_model
 from trainer import QwenSFTTrainer
 from dataset import make_supervised_data_module
@@ -230,7 +233,7 @@ def train():
     )
 
     using_deepspeed = bool(training_args.deepspeed)
-    force_fresh = os.environ.get("CXR_FORCE_FRESH", "").lower() in ("1", "true", "yes")
+    force_fresh = False
     if force_fresh:
         rank0_print("CXR_FORCE_FRESH set — skipping checkpoint resume (existing checkpoints kept on disk).")
         resume_path, hf_weights_dir = None, None
@@ -244,6 +247,7 @@ def train():
         load_hf_checkpoint_weights(model, hf_weights_dir, log_fn=rank0_print)
 
     if resume_path:
+        print(f"Resuming from checkpoint: {resume_path}")
         trainer.train(resume_from_checkpoint=resume_path)
     else:
         trainer.train()

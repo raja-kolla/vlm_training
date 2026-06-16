@@ -1,10 +1,14 @@
 import copy
+import logging
 import os
 from typing import Dict
 import torch
 import transformers
 import ujson as json
 from torch.utils.data import Dataset
+from PIL import ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from params import DataArguments
 from constants import (
@@ -28,6 +32,9 @@ from .data_utils import (
     pad_sequence,
     use_default_system_message,
 )
+
+logger = logging.getLogger(__name__)
+_MAX_SAMPLE_RETRIES = 10
 
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
@@ -78,6 +85,32 @@ class SupervisedDataset(Dataset):
         return len(self.list_data_dict)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        last_exc = None
+        idx = i
+        for attempt in range(_MAX_SAMPLE_RETRIES):
+            try:
+                return self._getitem_impl(idx)
+            except OSError as exc:
+                last_exc = exc
+                sample = self.list_data_dict[idx]
+                sample_id = sample.get("id", idx)
+                media = sample.get("image") or sample.get("video")
+                logger.warning(
+                    "Skipping sample idx=%s id=%s media=%r due to load error "
+                    "(attempt %s/%s): %s",
+                    idx,
+                    sample_id,
+                    media,
+                    attempt + 1,
+                    _MAX_SAMPLE_RETRIES,
+                    exc,
+                )
+                idx = (idx + 1) % len(self)
+        raise RuntimeError(
+            f"Failed to load a valid sample after {_MAX_SAMPLE_RETRIES} attempts starting at index {i}"
+        ) from last_exc
+
+    def _getitem_impl(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
 
         is_video = False

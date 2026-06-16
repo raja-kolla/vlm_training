@@ -14,17 +14,17 @@ export HF_HOME="${HF_HOME:-/data/raja/vlm_training/.hf_cache}"
 deepspeed --num_gpus 4 src/train/train_sft.py \
   --use_liger_kernel True \
   --deepspeed  configs/deepspeed/zero2.json \
-  --model_id /data/raja/vlm_training/outputs/phase2_full_sft/checkpoint-1900 \
+  --model_id /data/raja/vlm_training/outputs/phase1_full_sft \
   --data_path /data/raja/vlm_training/training_data/llava/train.json \
   --image_folder /data/raja/chest_images \
   --remove_unused_columns False \
   --freeze_llm False \
-  --freeze_vision_tower False \
+  --freeze_vision_tower True \
   --freeze_merger False \
   --bf16 True \
   --fp16 False \
   --disable_flash_attn2 True \
-  --output_dir /data/raja/vlm_training/outputs/phase2_full_sft \
+  --output_dir /data/raja/vlm_training/outputs/phase2_1_full_sft \
   --num_train_epochs 2 \
   --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 4 \
@@ -43,7 +43,7 @@ deepspeed --num_gpus 4 src/train/train_sft.py \
   --lazy_preprocess True \
   --save_strategy steps \
   --save_steps 100 \
-  --save_total_limit 5 \
+  --save_total_limit 3 \
   --dataloader_num_workers 16 \
   --max_seq_length 8192 \
   "$@"

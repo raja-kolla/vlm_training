@@ -24,6 +24,9 @@ IMAGE_MAX_PIXELS="${IMAGE_MAX_PIXELS:-$((128 * 16 * 128 * 16))}"
 
 export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
+# Reuse the already-downloaded HF model cache instead of re-downloading.
+export HF_HOME="${HF_HOME:-/data/raja/vlm_training/.hf_cache}"
+
 DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/deepspeed/zero2.json}"
 if [[ "$NUM_DEVICES" -eq 1 ]]; then
   LAUNCHER=(python)
