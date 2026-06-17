@@ -1,0 +1,4 @@
+# Serving stack for deploy/ (install on top of repo requirements.txt)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12

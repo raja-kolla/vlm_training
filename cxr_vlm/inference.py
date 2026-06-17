@@ -72,6 +72,7 @@ def generate_report_from_loaded(
         messages,
         tokenize=True,
         add_generation_prompt=True,
+        enable_thinking=False,  # match training's closed empty think block
         return_dict=True,
         return_tensors="pt",
     )
