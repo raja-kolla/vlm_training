@@ -13,9 +13,9 @@ export HF_HOME="${HF_HOME:-/data/raja/vlm_training/.hf_cache}"
 deepspeed --num_gpus 4 src/train/train_sft.py \
   --use_liger_kernel True \
   --deepspeed configs/deepspeed/zero2.json \
-  --model_id Qwen/Qwen3.5-4B \
+  --model_id Qwen/Qwen3-VL-8B-Instruct \
   --data_path /data/raja/vlm_training/training_data/llava/train.json \
-  --image_folder /data/raja/chest_images \
+  --image_folder /data/raja/images/chest_images \
   --remove_unused_columns False \
   --freeze_llm True \
   --freeze_vision_tower False \
@@ -23,9 +23,9 @@ deepspeed --num_gpus 4 src/train/train_sft.py \
   --bf16 True \
   --fp16 False \
   --disable_flash_attn2 True \
-  --output_dir /data/raja/vlm_training/outputs/phase1_freeze_llm_bkp \
+  --output_dir /data/raja/vlm_training/outputs/phase1_freeze_llm_8b \
   --num_train_epochs 2 \
-  --per_device_train_batch_size 12 \
+  --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 4 \
   --image_min_pixels 65536 \
   --image_max_pixels 4194304 \

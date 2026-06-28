@@ -10,9 +10,10 @@ wandb/
 .hf_cache/
 eval_results/
 *.log
-
+*.out
 # C extensions
 *.so
+*.csv
 
 # Distribution / packaging
 .Python

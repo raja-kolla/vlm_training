@@ -21,6 +21,7 @@ from train.train_utils import (
     resolve_training_resume,
     safe_save_model_for_hf_trainer,
     CheckpointPersistCallback,
+    EpochCheckpointCallback,
     StepDetailsCallback,
 )
 import pathlib
@@ -224,13 +225,15 @@ def train():
                                               processor=processor,
                                               data_args=data_args)
 
+    epoch_checkpoint_cb = EpochCheckpointCallback()
     trainer = QwenSFTTrainer(
         model=model,
         processing_class=processor,
         args=training_args,
-        callbacks=[StepDetailsCallback(), CheckpointPersistCallback()],
+        callbacks=[StepDetailsCallback(), CheckpointPersistCallback(), epoch_checkpoint_cb],
         **data_module
     )
+    epoch_checkpoint_cb.bind_trainer(trainer)
 
     using_deepspeed = bool(training_args.deepspeed)
     force_fresh = False

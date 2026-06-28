@@ -109,6 +109,37 @@ class CheckpointPersistCallback(transformers.TrainerCallback):
         return control
 
 
+class EpochCheckpointCallback(transformers.TrainerCallback):
+    """
+    Save a permanent epoch checkpoint for evaluation.
+
+    Step checkpoints (checkpoint-N) in output_dir are still rotated by save_total_limit
+    for resume; epoch copies live under output_dir/epoch_checkpoints/ and are never deleted.
+    """
+
+    _trainer: transformers.Trainer | None = None
+
+    def bind_trainer(self, trainer: transformers.Trainer) -> None:
+        self._trainer = trainer
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if not state.is_world_process_zero or self._trainer is None:
+            return control
+        epoch_num = max(1, round(state.epoch))
+        epoch_dir = pathlib.Path(args.output_dir) / "epoch_checkpoints" / f"epoch-{epoch_num}"
+        epoch_dir.mkdir(parents=True, exist_ok=True)
+        self._trainer.save_model(str(epoch_dir))
+        processing_class = getattr(self._trainer, "processing_class", None)
+        if processing_class is not None:
+            processing_class.save_pretrained(str(epoch_dir))
+        print(
+            f"Epoch checkpoint saved: {epoch_dir} "
+            f"(epoch={epoch_num}, global_step={state.global_step})",
+            flush=True,
+        )
+        return control
+
+
 class StepDetailsCallback(transformers.TrainerCallback):
     """Attach per-step GPU memory stats to each W&B log entry."""
 
